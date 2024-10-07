@@ -1,8 +1,9 @@
+package epfl.ch.lara.pdfview
+
 import java.awt.event.{KeyAdapter, KeyEvent, MouseWheelEvent, MouseWheelListener, FocusEvent, FocusListener, MouseAdapter, MouseEvent}
 import java.awt.{BorderLayout, Dimension, Image}
 import javax.swing.{ImageIcon, JFrame, JLabel, JToolBar, JTextArea, JScrollPane, JButton, JPanel}
-import javax.swing.text.{StyleConstants, StyleContext}
-import javax.swing.text.StyledDocument
+import javax.swing.text.{StyleConstants, StyleContext,StyledDocument}
 import org.fife.ui.rsyntaxtextarea.{RSyntaxTextArea, SyntaxConstants}
 import org.fife.ui.rtextarea.RTextScrollPane
 import org.apache.pdfbox.pdmodel.PDDocument
@@ -11,33 +12,23 @@ import java.io.File
 import java.awt.image.BufferedImage
 import scala.collection.mutable
 
-import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.pdmodel.PDPage
+import org.apache.pdfbox.pdmodel.{PDDocument,PDPage,PDDocumentCatalog}
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo
 import org.apache.pdfbox.pdmodel.interactive.annotation.{PDAnnotation, PDAnnotationLink}
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.{PDPageDestination,PDNamedDestination}
-import org.apache.pdfbox.pdmodel.PDDocumentCatalog
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.rendering.PDFRenderer
 
 import scala.sys.process.*
 
-object PDFViewer {
-  def main(args: Array[String]): Unit = {
-    // Check if the file path is provided as a command line argument
-    if (args.length < 1) {
-      println("Usage: PDFViewer <path to PDF file>")
-      sys.exit(1)
-    }
-
-    val filePath = args(0)
-
-    // Load PDF document and create PDFRenderer
-    val document = PDDocument.load(new File(filePath))
+class PDFView(fileName: String):
+    val document = PDDocument.load(new File(fileName))
     val pdfRenderer = new PDFRenderer(document)
+    var currentPage = 0
 
     // Extract only the first page initially
     val dpi = 200f
+    val fontSize: Float = math.floor(dpi/8.0).toFloat
     val images = mutable.Map[Int, BufferedImage]()
     images(0) = pdfRenderer.renderImageWithDPI(0, dpi).asInstanceOf[BufferedImage]
 
@@ -56,27 +47,24 @@ object PDFViewer {
     frame.add(imageLabel, BorderLayout.CENTER)
     imageLabel.setFocusable(true) // Allow the image label to be focusable
 
-    // Introduce a counter for the current page
-    var currentPage = 0
-
 
     // Create a toolbar to display the current page
     val toolbar = new JToolBar()
     val pageLabel = new JLabel(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
-    pageLabel.setFont(pageLabel.getFont.deriveFont(16f))
+    pageLabel.setFont(pageLabel.getFont.deriveFont(fontSize))
     toolbar.add(pageLabel)
     frame.add(toolbar, BorderLayout.SOUTH)
 
     // Create a syntax-highlighted text area to the right of the image
     val textArea = new RSyntaxTextArea(20, 60)
-    textArea.setFont(textArea.getFont.deriveFont(16f))
+    textArea.setFont(textArea.getFont.deriveFont(fontSize))
     textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_SCALA)
     textArea.setCodeFoldingEnabled(true)
     textArea.setText("val x = 42\nprintln(f\"Hello Scala, ${x + x}\")\n// press F5 to execute Scala")
     val textScrollPane = new RTextScrollPane(textArea)
     textScrollPane.setPreferredSize(new Dimension(images(0).getWidth/2, images(0).getHeight))
     frame.add(textScrollPane, BorderLayout.EAST)
-
+    
     def renderPage = {
       if (!images.contains(currentPage)) {
         images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
@@ -84,6 +72,8 @@ object PDFViewer {
       imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
       pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
     }
+
+    renderPage
 
     textArea.addKeyListener(new KeyAdapter {
       override def keyPressed(e: KeyEvent): Unit = {
@@ -102,7 +92,7 @@ object PDFViewer {
           e.getKeyCode match {
             case KeyEvent.VK_F5 =>
               // Break into debug REPL with
-              val commandName = "scala-cli shebang"
+              val commandName = "scala-cli shebang --quiet"
               val programText = textArea.getText
               val saveFileName = "test.txt"
               val writer = new java.io.BufferedWriter(new java.io.FileWriter(saveFileName))
@@ -121,9 +111,8 @@ object PDFViewer {
       }
     })
 
-
     // Set initial focus on the PDF viewing area
-    imageLabel.requestFocusInWindow()
+    imageLabel.requestFocusInWindow
 
     // Add mouse listener to switch focus when clicking on the PDF area
     imageLabel.addMouseListener(new MouseAdapter {
@@ -229,39 +218,22 @@ object PDFViewer {
     })
 
     frame.addMouseWheelListener(new MouseWheelListener {
-      override def mouseWheelMoved(e: MouseWheelEvent): Unit = {
-        if (!textArea.hasFocus) {
-          // Adding a mouse wheel listener to handle scrolling through pages only when the focus is not on the text area
-          if (e.getWheelRotation < 0 && currentPage > 0) { // Scroll up
+      override def mouseWheelMoved(e: MouseWheelEvent): Unit =
+        if (!textArea.hasFocus) then
+          // Adding a mouse wheel listener to handle scrolling through pages 
+          // only when the focus is not on the text area
+          if e.getWheelRotation < 0 && currentPage > 0 then // Scroll up
             currentPage -= 1
-            if (!images.contains(currentPage)) {
-              images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
-            }
-            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
-            pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
-          } else if (e.getWheelRotation > 0 && currentPage < document.getNumberOfPages - 1) { // Scroll down
+            renderPage
+          else if e.getWheelRotation > 0 && currentPage < document.getNumberOfPages - 1 then // Scroll down
             currentPage += 1
-            if (!images.contains(currentPage)) {
-              images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
-            }
-            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
-            pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
-          }
-        }
-      }    
+            renderPage          
     })
 
-    frame.pack()
+    frame.pack
     frame.setVisible(true)
 
-    // Close the document when done
-    sys.addShutdownHook {
-      document.close()
-    }
-  }
-}
+    sys.addShutdownHook:
+      document.close  
 
-// Instructions:
-// Run the program with a PDF file path as a command line argument.
-// Example: scala PDFViewer /path/to/your/file.pdf
-// This example extracts images from all pages of the PDF on demand.
+end PDFView
