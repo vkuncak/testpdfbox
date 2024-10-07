@@ -11,6 +11,16 @@ import java.io.File
 import java.awt.image.BufferedImage
 import scala.collection.mutable
 
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.PDPage
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo
+import org.apache.pdfbox.pdmodel.interactive.annotation.{PDAnnotation, PDAnnotationLink}
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.{PDPageDestination,PDNamedDestination}
+import org.apache.pdfbox.pdmodel.PDDocumentCatalog
+import org.apache.pdfbox.pdmodel.common.PDRectangle
+import org.apache.pdfbox.rendering.PDFRenderer
+
+
 object PDFViewer {
   def main(args: Array[String]): Unit = {
     // Check if the file path is provided as a command line argument
@@ -26,7 +36,7 @@ object PDFViewer {
     val pdfRenderer = new PDFRenderer(document)
 
     // Extract only the first page initially
-    val dpi = 200
+    val dpi = 200f
     val images = mutable.Map[Int, BufferedImage]()
     images(0) = pdfRenderer.renderImageWithDPI(0, dpi).asInstanceOf[BufferedImage]
 
@@ -48,6 +58,7 @@ object PDFViewer {
     // Introduce a counter for the current page
     var currentPage = 0
 
+
     // Create a toolbar to display the current page
     val toolbar = new JToolBar()
     val pageLabel = new JLabel(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
@@ -64,6 +75,14 @@ object PDFViewer {
     val textScrollPane = new RTextScrollPane(textArea)
     textScrollPane.setPreferredSize(new Dimension(300, images(0).getHeight))
     frame.add(textScrollPane, BorderLayout.EAST)
+
+    def renderPage = {
+      if (!images.contains(currentPage)) {
+        images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
+      }
+      imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+      pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
+    }
 
     textArea.addKeyListener(new KeyAdapter {
       override def keyPressed(e: KeyEvent): Unit = {
@@ -90,6 +109,63 @@ object PDFViewer {
     imageLabel.addMouseListener(new MouseAdapter {
       override def mouseClicked(e: MouseEvent): Unit = {
         imageLabel.requestFocusInWindow()
+        // hyperlinks
+        val page = document.getPage(currentPage)
+        val annotations = page.getAnnotations
+        val scale = dpi / 72f // Scale factor used to render image at 150 DPI
+        val clickX = e.getX / scale
+        val clickY = page.getMediaBox.getHeight - (e.getY / scale)
+        annotations.forEach {          
+          case link: PDAnnotationLink =>
+            val rect = link.getRectangle
+            if (rect != null) {
+              //println(f"Rectangle:           (${rect.getUpperRightX}, ${rect.getUpperRightY})")
+              //println(f"Rectangle: (${rect.getLowerLeftX}, ${rect.getLowerLeftY})")
+              //println(f"Mouse click:      (${clickX}, ${clickY}")
+              if (clickX >= rect.getLowerLeftX && clickX <= rect.getUpperRightX &&
+                clickY >= rect.getLowerLeftY && clickY <= rect.getUpperRightY) {                
+                println("Clicked a link!!!")
+                // Handle internal links (GoTo action)
+                link.getAction match {
+                  case action: PDActionGoTo =>
+                    val destination = action.getDestination
+                    println("PDFActionGoTo!")
+                    destination match {
+                      case pageDestination: PDPageDestination =>
+                        val targetPageIndex = pageDestination.retrievePageNumber
+                        println("page destination, targetPageIndex = $targetPageIndex")
+                        // Navigate to the target page
+                        if (targetPageIndex >= 0 && targetPageIndex < document.getNumberOfPages) {                          
+                          currentPage = targetPageIndex
+                          renderPage
+                        }
+                      case namedDestination: PDNamedDestination =>
+                        val destName = namedDestination.getNamedDestination
+                        val catalog: PDDocumentCatalog = document.getDocumentCatalog
+                        val names = catalog.getNames
+                        if (names != null) {
+                          val dests = names.getDests
+                          if (dests != null) {
+                            val dest = dests.getValue(destName)
+                            if (dest != null && dest.isInstanceOf[PDPageDestination]) {
+                              val targetPageIndex = dest.asInstanceOf[PDPageDestination].retrievePageNumber
+                              println(f"going to page number $targetPageIndex")
+                              if (targetPageIndex >= 0 && targetPageIndex < document.getNumberOfPages) {
+                                currentPage = targetPageIndex
+                                renderPage
+                              }
+                            }
+                          }
+                        }
+
+                      case _ => println("Uknown destination")
+                    }
+                  case _ => // Ignore other types of actions
+                }
+              }
+            }
+          case _ => // Ignore other annotations
+        }
       }
     })
 
@@ -107,20 +183,12 @@ object PDFViewer {
           case KeyEvent.VK_LEFT =>
             if (currentPage > 0) {
               currentPage -= 1
-              if (!images.contains(currentPage)) {
-                images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
-              }
-              imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
-              pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
+              renderPage
             }
           case KeyEvent.VK_RIGHT =>
             if (currentPage < document.getNumberOfPages - 1) {
               currentPage += 1
-              if (!images.contains(currentPage)) {
-                images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
-              }
-              imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
-              pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
+              renderPage
             }
           case KeyEvent.VK_PLUS | KeyEvent.VK_EQUALS => // Handle '+' or '=' key for zoom in
             currentImageWidth = (currentImageWidth * 1.1).toInt
@@ -140,10 +208,10 @@ object PDFViewer {
       }
     })
 
-    // Adding a mouse wheel listener to handle scrolling through pages only when the focus is not on the text area
     frame.addMouseWheelListener(new MouseWheelListener {
       override def mouseWheelMoved(e: MouseWheelEvent): Unit = {
         if (!textArea.hasFocus) {
+          // Adding a mouse wheel listener to handle scrolling through pages only when the focus is not on the text area
           if (e.getWheelRotation < 0 && currentPage > 0) { // Scroll up
             currentPage -= 1
             if (!images.contains(currentPage)) {
@@ -160,7 +228,7 @@ object PDFViewer {
             pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
           }
         }
-      }
+      }    
     })
 
     frame.pack()
