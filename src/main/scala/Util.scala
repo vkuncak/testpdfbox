@@ -1,4 +1,4 @@
-package epfl.ch.lara.pdfview
+package pdfview
 import java.io.File
 import scala.sys.process.*
 

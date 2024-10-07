@@ -1,4 +1,4 @@
-package epfl.ch.lara.pdfview
+package pdfview
 
 import scala.collection.mutable
 import java.io.File
