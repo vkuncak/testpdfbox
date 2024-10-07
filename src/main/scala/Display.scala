@@ -1,6 +1,6 @@
-import java.awt.event.{KeyAdapter, KeyEvent, MouseWheelEvent, MouseWheelListener}
+import java.awt.event.{KeyAdapter, KeyEvent, MouseWheelEvent, MouseWheelListener, FocusEvent, FocusListener, MouseAdapter, MouseEvent}
 import java.awt.{BorderLayout, Dimension, Image}
-import javax.swing.{ImageIcon, JFrame, JLabel, JToolBar, JTextArea, JScrollPane}
+import javax.swing.{ImageIcon, JFrame, JLabel, JToolBar, JTextArea, JScrollPane, JButton, JPanel}
 import javax.swing.text.{StyleConstants, StyleContext}
 import javax.swing.text.StyledDocument
 import org.fife.ui.rsyntaxtextarea.{RSyntaxTextArea, SyntaxConstants}
@@ -26,7 +26,7 @@ object PDFViewer {
     val pdfRenderer = new PDFRenderer(document)
 
     // Extract only the first page initially
-    val dpi = 300
+    val dpi = 200
     val images = mutable.Map[Int, BufferedImage]()
     images(0) = pdfRenderer.renderImageWithDPI(0, dpi).asInstanceOf[BufferedImage]
 
@@ -34,13 +34,16 @@ object PDFViewer {
     val frame = new JFrame("PDF Viewer")
     frame.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE)
     frame.setSize(new Dimension(images(0).getWidth + 300, images(0).getHeight))
-    frame.setResizable(false)
+    frame.setResizable(true)
     frame.setLayout(new BorderLayout())
 
     // Create a JLabel to display the images
-    val imageLabel = new JLabel(new ImageIcon(images(0)))
-    imageLabel.setPreferredSize(new Dimension(images(0).getWidth, images(0).getHeight))
+    var currentImageWidth = images(0).getWidth
+    var currentImageHeight = images(0).getHeight
+    val imageLabel = new JLabel(new ImageIcon(images(0).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+    imageLabel.setPreferredSize(new Dimension(currentImageWidth, currentImageHeight))
     frame.add(imageLabel, BorderLayout.CENTER)
+    imageLabel.setFocusable(true) // Allow the image label to be focusable
 
     // Introduce a counter for the current page
     var currentPage = 0
@@ -62,8 +65,43 @@ object PDFViewer {
     textScrollPane.setPreferredSize(new Dimension(300, images(0).getHeight))
     frame.add(textScrollPane, BorderLayout.EAST)
 
-    // Adding a key listener to handle arrow key inputs
-    frame.addKeyListener(new KeyAdapter {
+    textArea.addKeyListener(new KeyAdapter {
+      override def keyPressed(e: KeyEvent): Unit = {
+        if (e.isControlDown) {
+          e.getKeyCode match {
+            case KeyEvent.VK_PLUS | KeyEvent.VK_EQUALS => // Handle Ctrl-'+' or Ctrl-'=' for increasing font size
+              val newFontSize = textArea.getFont.getSize + 2
+              textArea.setFont(textArea.getFont.deriveFont(newFontSize.toFloat))
+            case KeyEvent.VK_MINUS => // Handle Ctrl-'-' for decreasing font size
+              val newFontSize = Math.max(8, textArea.getFont.getSize - 2) // Ensure font size does not go below 8
+              textArea.setFont(textArea.getFont.deriveFont(newFontSize.toFloat))
+            case _ =>
+              // Do nothing for other keys
+          }
+        }
+      }
+    })
+
+
+    // Set initial focus on the PDF viewing area
+    imageLabel.requestFocusInWindow()
+
+    // Add mouse listener to switch focus when clicking on the PDF area
+    imageLabel.addMouseListener(new MouseAdapter {
+      override def mouseClicked(e: MouseEvent): Unit = {
+        imageLabel.requestFocusInWindow()
+      }
+    })
+
+    // Add mouse listener to switch focus when clicking on the text area
+    textArea.addMouseListener(new MouseAdapter {
+      override def mouseClicked(e: MouseEvent): Unit = {
+        textArea.requestFocusInWindow()
+      }
+    })
+
+    // Adding a key listener to handle arrow key inputs directly to the imageLabel component
+    imageLabel.addKeyListener(new KeyAdapter {
       override def keyPressed(e: KeyEvent): Unit = {
         e.getKeyCode match {
           case KeyEvent.VK_LEFT =>
@@ -72,7 +110,7 @@ object PDFViewer {
               if (!images.contains(currentPage)) {
                 images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
               }
-              imageLabel.setIcon(new ImageIcon(images(currentPage)))
+              imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
               pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
             }
           case KeyEvent.VK_RIGHT =>
@@ -81,32 +119,46 @@ object PDFViewer {
               if (!images.contains(currentPage)) {
                 images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
               }
-              imageLabel.setIcon(new ImageIcon(images(currentPage)))
+              imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
               pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
             }
+          case KeyEvent.VK_PLUS | KeyEvent.VK_EQUALS => // Handle '+' or '=' key for zoom in
+            currentImageWidth = (currentImageWidth * 1.1).toInt
+            currentImageHeight = (currentImageHeight * 1.1).toInt
+            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+            imageLabel.setPreferredSize(new Dimension(currentImageWidth, currentImageHeight))
+            frame.pack()
+          case KeyEvent.VK_MINUS => // Handle '-' key for zoom out
+            currentImageWidth = (currentImageWidth * 0.9).toInt
+            currentImageHeight = (currentImageHeight * 0.9).toInt
+            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+            imageLabel.setPreferredSize(new Dimension(currentImageWidth, currentImageHeight))
+            frame.pack()
           case _ =>
             // Do nothing for other keys
         }
       }
     })
 
-    // Adding a mouse wheel listener to handle scrolling through pages
+    // Adding a mouse wheel listener to handle scrolling through pages only when the focus is not on the text area
     frame.addMouseWheelListener(new MouseWheelListener {
       override def mouseWheelMoved(e: MouseWheelEvent): Unit = {
-        if (e.getWheelRotation < 0 && currentPage > 0) { // Scroll up
-          currentPage -= 1
-          if (!images.contains(currentPage)) {
-            images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
+        if (!textArea.hasFocus) {
+          if (e.getWheelRotation < 0 && currentPage > 0) { // Scroll up
+            currentPage -= 1
+            if (!images.contains(currentPage)) {
+              images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
+            }
+            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+            pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
+          } else if (e.getWheelRotation > 0 && currentPage < document.getNumberOfPages - 1) { // Scroll down
+            currentPage += 1
+            if (!images.contains(currentPage)) {
+              images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
+            }
+            imageLabel.setIcon(new ImageIcon(images(currentPage).getScaledInstance(currentImageWidth, currentImageHeight, Image.SCALE_SMOOTH)))
+            pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
           }
-          imageLabel.setIcon(new ImageIcon(images(currentPage)))
-          pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
-        } else if (e.getWheelRotation > 0 && currentPage < document.getNumberOfPages - 1) { // Scroll down
-          currentPage += 1
-          if (!images.contains(currentPage)) {
-            images(currentPage) = pdfRenderer.renderImageWithDPI(currentPage, dpi).asInstanceOf[BufferedImage]
-          }
-          imageLabel.setIcon(new ImageIcon(images(currentPage)))
-          pageLabel.setText(s"Page: ${currentPage + 1}/${document.getNumberOfPages}")
         }
       }
     })
