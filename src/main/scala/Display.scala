@@ -20,6 +20,7 @@ import org.apache.pdfbox.pdmodel.PDDocumentCatalog
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.rendering.PDFRenderer
 
+import scala.sys.process.*
 
 object PDFViewer {
   def main(args: Array[String]): Unit = {
@@ -71,9 +72,9 @@ object PDFViewer {
     textArea.setFont(textArea.getFont.deriveFont(16f))
     textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_SCALA)
     textArea.setCodeFoldingEnabled(true)
-    textArea.setText("object Test {  }")
+    textArea.setText("val x = 42\nprintln(f\"Hello Scala, ${x + x}\")\n// press F5 to execute Scala")
     val textScrollPane = new RTextScrollPane(textArea)
-    textScrollPane.setPreferredSize(new Dimension(300, images(0).getHeight))
+    textScrollPane.setPreferredSize(new Dimension(images(0).getWidth/2, images(0).getHeight))
     frame.add(textScrollPane, BorderLayout.EAST)
 
     def renderPage = {
@@ -96,6 +97,25 @@ object PDFViewer {
               textArea.setFont(textArea.getFont.deriveFont(newFontSize.toFloat))
             case _ =>
               // Do nothing for other keys
+          }
+        } else {
+          e.getKeyCode match {
+            case KeyEvent.VK_F5 =>
+              // Break into debug REPL with
+              val commandName = "scala-cli shebang"
+              val programText = textArea.getText
+              val saveFileName = "test.txt"
+              val writer = new java.io.BufferedWriter(new java.io.FileWriter(saveFileName))
+              writer.write("#!/usr/bin/env -S scala-cli shebang\n")
+              writer.write(programText)
+              writer.close()
+
+              val toRun = commandName + " " + saveFileName
+              println(f"running:\n${toRun}")
+              val processLogger = ProcessLogger(line => textArea.append("\n//" + line))
+              val exitCode = toRun ! processLogger
+              ()
+            case _ => ()
           }
         }
       }

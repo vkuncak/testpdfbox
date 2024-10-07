@@ -9,7 +9,8 @@ scalaVersion := "3.5.1"
 libraryDependencies ++= Seq(
   "org.apache.pdfbox" % "pdfbox" % "2.0.29",
   "org.scala-lang.modules" %% "scala-swing" % "3.0.0",
-  "com.fifesoft" % "rsyntaxtextarea" % "3.1.3"
+  "com.fifesoft" % "rsyntaxtextarea" % "3.1.3",
+//  "com.lihaoyi" % "ammonite" % "3.0.0" cross CrossVersion.full
 )
 
 ThisBuild / organization := "com.example"
