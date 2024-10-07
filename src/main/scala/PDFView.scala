@@ -12,16 +12,6 @@ import javax.swing.text.{StyleConstants, StyleContext,StyledDocument}
 import org.fife.ui.rsyntaxtextarea.{RSyntaxTextArea, SyntaxConstants}
 import org.fife.ui.rtextarea.RTextScrollPane
 
-import org.apache.pdfbox.pdmodel.{PDDocument,PDPage,PDDocumentCatalog}
-import org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo
-import org.apache.pdfbox.pdmodel.interactive.annotation.{PDAnnotation, PDAnnotationLink}
-import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.{PDPageDestination,PDNamedDestination}
-import org.apache.pdfbox.pdmodel.common.PDRectangle
-import org.apache.pdfbox.rendering.PDFRenderer
-import org.apache.pdfbox.pdmodel.PDDocument
-
-import scala.sys.process.*
-
 class PDFView(fileName: String):
     val dpi = 200f
     val file = new File(fileName)
@@ -86,20 +76,10 @@ class PDFView(fileName: String):
           }
         } else {
           e.getKeyCode match {
-            case KeyEvent.VK_F5 =>
-              // Break into debug REPL with
-              val commandName = "scala-cli shebang --quiet"
-              val programText = textArea.getText
-              val saveFileName = "test.txt"
-              val writer = new java.io.BufferedWriter(new java.io.FileWriter(saveFileName))
-              writer.write("#!/usr/bin/env -S scala-cli shebang\n")
-              writer.write(programText)
-              writer.close()
-
-              val toRun = commandName + " " + saveFileName
-              println(f"running:\n${toRun}")
-              val processLogger = ProcessLogger(line => textArea.append("\n//" + line))
-              val exitCode = toRun ! processLogger
+            case KeyEvent.VK_F5 => 
+              def logger(line: String): Unit = 
+                textArea.append("\n//" + line)
+              val exitCode = Util.runScala(textArea.getText, logger)
               ()
             case _ => ()
           }
