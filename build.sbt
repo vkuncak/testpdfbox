@@ -1,4 +1,6 @@
-name := "PictureSwitcherApp"
+Compile / run / fork := true
+
+name := "pdfviewer"
 
 version := "0.1"
 
