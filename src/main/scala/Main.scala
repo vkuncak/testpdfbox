@@ -5,4 +5,5 @@ object PDFViewer:
     if args == null || args.length < 1 then
       println("Usage: pdfview <path to PDF file>")
     else
-      PDFView(args(0))
+      args.map(PDFView(_))
+
